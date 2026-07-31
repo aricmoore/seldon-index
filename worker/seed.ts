@@ -28,17 +28,34 @@ const SEED_HEADLINES: Array<{ headline: string; category: EventCategory }> = [
 
 const HOURS_BETWEEN_SEED_EVENTS = 9
 
-export function buildSeedState(nowMs: number): IndexState {
+// Shared by seeding, submitting, and deleting: given an ordered list of events
+// (each already carrying its own delta/category), replays them from the base
+// totals to derive the running index, each sub-index, and every event's
+// snapshotted `index` value. Used after a delete to retroactively recompute
+// history rather than leaving the remaining tape's numbers stale.
+export function replayEvents(events: IndexEvent[]): {
+  index: number
+  subIndices: Record<PillarCategory, number>
+  events: IndexEvent[]
+} {
   let index = BASE_INDEX
   const subIndices = Object.fromEntries(PILLAR_IDS.map((id) => [id, BASE_SUB_INDEX])) as Record<
     PillarCategory,
     number
   >
 
-  const events: IndexEvent[] = SEED_HEADLINES.map(({ headline, category }, i) => {
+  const replayed = events.map((e) => {
+    index += e.delta
+    if (e.category && e.category !== 'Other') subIndices[e.category as PillarCategory] += e.delta
+    return { ...e, index }
+  })
+
+  return { index, subIndices, events: replayed }
+}
+
+export function buildSeedState(nowMs: number): IndexState {
+  const rawEvents: IndexEvent[] = SEED_HEADLINES.map(({ headline, category }, i) => {
     const { delta } = scoreHeadline(headline)
-    index += delta
-    if (category !== 'Other') subIndices[category as PillarCategory] += delta
     const at = new Date(
       nowMs - (SEED_HEADLINES.length - i) * HOURS_BETWEEN_SEED_EVENTS * 3600_000,
     ).toISOString()
@@ -46,12 +63,12 @@ export function buildSeedState(nowMs: number): IndexState {
       id: `seed-${i}`,
       headline,
       delta,
-      index,
+      index: 0,
       source: 'seed',
       category,
       at,
     }
   })
 
-  return { index, subIndices, events }
+  return replayEvents(rawEvents)
 }

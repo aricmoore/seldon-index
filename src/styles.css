@@ -815,6 +815,32 @@ td {
   color: var(--text-muted);
 }
 
+.tape-delete-cell {
+  width: 28px;
+  padding-left: 0;
+}
+
+.tape-delete {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  padding: 2px 6px;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+
+tbody tr:hover .tape-delete {
+  opacity: 1;
+}
+
+.tape-delete:hover {
+  color: var(--critical);
+}
+
 .delta-tag {
   font-weight: 600;
 }

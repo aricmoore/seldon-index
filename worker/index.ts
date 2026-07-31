@@ -1,6 +1,6 @@
 import type { IndexEvent, IndexState } from './types'
 import { scoreHeadline, looksLikePlausibleHeadline } from './scorer'
-import { buildSeedState } from './seed'
+import { buildSeedState, replayEvents } from './seed'
 import { classifyHeadline, type ClassificationResult } from './classifier'
 import { searchFellowCitations, type FellowCitation } from './fellowWatch'
 import { fetchExternalSignals, type ExternalSignals } from './externalSignals'
@@ -215,16 +215,15 @@ async function handlePostHeadline(request: Request, env: Env): Promise<Response>
     typeof submittedByRaw === 'string' && submittedByRaw.trim().length > 0 ? submittedByRaw.trim() : undefined
 
   const classification = await classifyWithFallback(headline.trim(), env)
+  const delta = classification.valid ? scaledDelta(classification.impact) : 0
   let event!: IndexEvent
 
   const nextState = await mutateState(env, (state) => {
-    const delta = classification.valid ? scaledDelta(classification.impact) : 0
-    const newIndex = state.index + delta
     event = {
       id: crypto.randomUUID(),
       headline: headline.trim(),
       delta,
-      index: classification.valid ? newIndex : state.index,
+      index: 0,
       source: classification.valid ? 'live' : 'rejected',
       category: classification.category,
       rationale: classification.rationale,
@@ -232,19 +231,26 @@ async function handlePostHeadline(request: Request, env: Env): Promise<Response>
       at: new Date().toISOString(),
     }
 
-    const nextSubIndices = { ...state.subIndices }
-    if (classification.valid && classification.category !== 'Other') {
-      nextSubIndices[classification.category] += delta
-    }
-
-    return {
-      index: classification.valid ? newIndex : state.index,
-      subIndices: nextSubIndices,
-      events: [...state.events, event],
-    }
+    return replayEvents([...state.events, event])
   })
 
+  event = nextState.events[nextState.events.length - 1]
   return json({ event, index: nextState.index })
+}
+
+async function handleDeleteHeadline(url: URL, env: Env): Promise<Response> {
+  const id = url.searchParams.get('id')?.trim()
+  if (!id) return json({ error: 'id query param is required' }, 400)
+
+  let found = false
+  const nextState = await mutateState(env, (state) => {
+    found = state.events.some((e) => e.id === id)
+    if (!found) return state
+    return replayEvents(state.events.filter((e) => e.id !== id))
+  })
+
+  if (!found) return json({ error: 'event not found' }, 404)
+  return json({ index: nextState.index })
 }
 
 export default {
@@ -260,6 +266,12 @@ export default {
           return json({ error: 'rate limit exceeded, try again shortly' }, 429)
         }
         return await handlePostHeadline(request, env)
+      }
+      if (url.pathname === '/api/headline' && request.method === 'DELETE') {
+        if (await rateLimited(env.HEADLINE_RATE_LIMITER, request, 'headline-delete')) {
+          return json({ error: 'rate limit exceeded, try again shortly' }, 429)
+        }
+        return await handleDeleteHeadline(url, env)
       }
       if (url.pathname === '/api/fellow-watch' && request.method === 'GET') {
         if (await rateLimited(env.FELLOW_WATCH_RATE_LIMITER, request, 'fellow-watch')) {

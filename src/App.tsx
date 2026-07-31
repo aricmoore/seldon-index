@@ -298,6 +298,20 @@ export default function App() {
     }
   }
 
+  async function handleDelete(id: string) {
+    if (!window.confirm('Delete this wire entry? This recomputes the index and can\'t be undone.')) return
+    try {
+      const res = await fetch(`/api/headline?id=${encodeURIComponent(id)}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null
+        throw new Error(body?.error ?? 'delete failed')
+      }
+      await refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'delete failed')
+    }
+  }
+
   async function handleFellowSearch(e: FormEvent) {
     e.preventDefault()
     const trimmed = fellowQuery.trim()
@@ -542,6 +556,16 @@ export default function App() {
                       {rejected ? <span className="delta-tag delta-rejected">0</span> : <DeltaTag delta={e.delta} />}
                     </td>
                     <td className="tape-index">{Math.round(e.index).toLocaleString()}</td>
+                    <td className="tape-delete-cell">
+                      <button
+                        type="button"
+                        className="tape-delete"
+                        aria-label="Delete this wire entry"
+                        onClick={() => handleDelete(e.id)}
+                      >
+                        ×
+                      </button>
+                    </td>
                   </tr>
                 )
               })}
