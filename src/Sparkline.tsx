@@ -1,12 +1,17 @@
+import type { CSSProperties } from 'react'
+
 interface SparklineProps {
   values: number[]
   width?: number
   height?: number
+  color?: string
 }
 
-export default function Sparkline({ values, width = 640, height = 120 }: SparklineProps) {
+export default function Sparkline({ values, width = 640, height = 120, color }: SparklineProps) {
+  const style = color ? ({ '--series-1': color } as CSSProperties) : undefined
+
   if (values.length < 2) {
-    return <svg width={width} height={height} className="sparkline" />
+    return <svg width={width} height={height} className="sparkline" style={style} />
   }
 
   const min = Math.min(...values)
@@ -25,7 +30,15 @@ export default function Sparkline({ values, width = 640, height = 120 }: Sparkli
   const [lastX, lastY] = points[points.length - 1]
 
   return (
-    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="sparkline" role="img" aria-label="Index value over time">
+    <svg
+      width={width}
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+      className="sparkline"
+      style={style}
+      role="img"
+      aria-label="Index value over time"
+    >
       <defs>
         <linearGradient id="sparkline-fill" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="var(--series-1)" stopOpacity="0.28" />

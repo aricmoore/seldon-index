@@ -1,4 +1,5 @@
 import type { EventCategory } from './types'
+import { PILLAR_CATEGORIES } from './categories'
 
 export interface ClassificationResult {
   valid: boolean
@@ -7,20 +8,25 @@ export interface ClassificationResult {
   rationale: string
 }
 
+const CATEGORY_ENUM = [...PILLAR_CATEGORIES.map((c) => c.id), 'Other'] as const
+
+const CATEGORY_GUIDE = PILLAR_CATEGORIES.map((c) => `- ${c.id}: ${c.description}`).join('\n')
+
 const CLASSIFY_TOOL = {
   name: 'classify_headline',
-  description: 'Classify a submitted headline for the American Innovation Index wire.',
+  description: 'Classify a submitted headline for the Seldon Index wire.',
   input_schema: {
     type: 'object',
     properties: {
       valid: {
         type: 'boolean',
         description:
-          'True if this reads as a plausible wire headline about American AI, energy, defense, or space innovation (or a clearly adjacent policy/industry development). False for spam, personal insults, off-topic submissions, or content with no real informational claim.',
+          'True if this reads as a plausible wire headline about American innovation, technology, science, energy, or tech policy across any of the six tracked sectors. False for spam, personal insults, off-topic submissions, or content with no real informational claim.',
       },
       category: {
         type: 'string',
-        enum: ['AI', 'Energy', 'Defense', 'Space', 'Other'],
+        enum: CATEGORY_ENUM,
+        description: `One of the six tracked sectors, or "Other" if it is on-topic but does not fit any sector:\n${CATEGORY_GUIDE}`,
       },
       impact: {
         type: 'integer',
@@ -39,9 +45,12 @@ const CLASSIFY_TOOL = {
 } as const
 
 const SYSTEM_PROMPT =
-  'You are the wire desk for a deadpan, Bloomberg-terminal-style "American Innovation Index" tracking AI, energy, defense, and space. ' +
-  'Classify submitted headlines with the classify_headline tool. Mark valid=false for spam, personal attacks, jokes with no real informational content, ' +
-  'or anything with no plausible connection to American innovation, industry, or policy. A funny but on-topic fictional headline can still be valid=true. ' +
+  'You are the wire desk for a deadpan, Bloomberg-terminal-style "Seldon Index" tracking American innovation trajectory ' +
+  'across six sectors: Technology & Statecraft, Artificial Intelligence, American Governance, Energy & Infrastructure, ' +
+  'Science & Innovation, and Frontier Legal Defense (litigation and regulatory enforcement for or against frontier tech, ' +
+  'not military defense). Classify submitted headlines with the classify_headline tool. Mark valid=false for spam, personal ' +
+  'attacks, jokes with no real informational content, or anything with no plausible connection to American innovation, ' +
+  'industry, or policy. A funny but on-topic fictional headline can still be valid=true. ' +
   'Be strict about validity, but do not be humorless about tone. ' +
   'In the rationale, never use an em dash; use a comma, colon, or period instead.'
 
@@ -60,8 +69,7 @@ function clampImpact(value: unknown): number {
 }
 
 function coerceCategory(value: unknown): EventCategory {
-  const categories: EventCategory[] = ['AI', 'Energy', 'Defense', 'Space', 'Other']
-  return categories.includes(value as EventCategory) ? (value as EventCategory) : 'Other'
+  return (CATEGORY_ENUM as readonly string[]).includes(value as string) ? (value as EventCategory) : 'Other'
 }
 
 export async function classifyHeadline(headline: string, apiKey: string): Promise<ClassificationResult> {

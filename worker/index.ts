@@ -3,14 +3,18 @@ import { scoreHeadline } from './scorer'
 import { buildSeedState } from './seed'
 import { classifyHeadline, type ClassificationResult } from './classifier'
 import { searchFellowCitations } from './fellowWatch'
+import { fetchExternalSignals, type ExternalSignals } from './externalSignals'
+
+const SIGNALS_CACHE_KEY = 'external-signals-cache'
+const SIGNALS_CACHE_TTL_MS = 12 * 60_000
 
 const STATE_KEY = 'state'
 const MAX_EVENTS = 200
 const MAX_HEADLINE_LENGTH = 140
+const MAX_SUBMITTER_LENGTH = 40
 const MAX_FELLOW_NAME_LENGTH = 80
 const IMPACT_SCALE = 4
 const MAX_ABS_DELTA = 40
-const EASTER_EGG_CHANCE = 0.125
 
 function scaledDelta(impact: number): number {
   return Math.max(-MAX_ABS_DELTA, Math.min(MAX_ABS_DELTA, Math.round(impact * IMPACT_SCALE)))
@@ -21,10 +25,10 @@ async function classifyWithFallback(headline: string, env: Env): Promise<Classif
     return await classifyHeadline(headline, env.ANTHROPIC_API_KEY)
   } catch (err) {
     console.error('classifier failed, falling back to keyword scorer', err)
-    const { delta } = scoreHeadline(headline)
+    const { delta, category } = scoreHeadline(headline)
     return {
       valid: true,
-      category: 'Other',
+      category,
       impact: Math.round(delta / IMPACT_SCALE),
       rationale: 'keyword fallback (classifier unavailable)',
     }
@@ -108,6 +112,28 @@ async function handleFellowWatch(url: URL, env: Env): Promise<Response> {
   }
 }
 
+async function handleExternalSignals(env: Env): Promise<Response> {
+  const cachedRaw = await env.AII_KV.get(SIGNALS_CACHE_KEY)
+  const cached = cachedRaw ? (JSON.parse(cachedRaw) as ExternalSignals) : null
+  const cacheAge = cached ? Date.now() - new Date(cached.generatedAt).getTime() : Infinity
+
+  if (cached && cacheAge < SIGNALS_CACHE_TTL_MS) {
+    return json(cached)
+  }
+
+  const fresh = await fetchExternalSignals()
+  if (fresh) {
+    await env.AII_KV.put(SIGNALS_CACHE_KEY, JSON.stringify(fresh))
+    return json(fresh)
+  }
+
+  if (cached) {
+    return json({ ...cached, stale: true })
+  }
+
+  return json({ generatedAt: new Date().toISOString(), stale: false, status: 'degraded', signals: [] })
+}
+
 async function handlePostHeadline(request: Request, env: Env): Promise<Response> {
   let body: unknown
   try {
@@ -124,6 +150,13 @@ async function handlePostHeadline(request: Request, env: Env): Promise<Response>
     return json({ error: `headline must be ${MAX_HEADLINE_LENGTH} characters or fewer` }, 400)
   }
 
+  const submittedByRaw = (body as { submittedBy?: unknown })?.submittedBy
+  if (typeof submittedByRaw === 'string' && submittedByRaw.length > MAX_SUBMITTER_LENGTH) {
+    return json({ error: `submittedBy must be ${MAX_SUBMITTER_LENGTH} characters or fewer` }, 400)
+  }
+  const submittedBy =
+    typeof submittedByRaw === 'string' && submittedByRaw.trim().length > 0 ? submittedByRaw.trim() : undefined
+
   const classification = await classifyWithFallback(headline.trim(), env)
   let event!: IndexEvent
 
@@ -138,6 +171,7 @@ async function handlePostHeadline(request: Request, env: Env): Promise<Response>
       source: classification.valid ? 'live' : 'rejected',
       category: classification.category,
       rationale: classification.rationale,
+      submittedBy,
       at: new Date().toISOString(),
     }
 
@@ -146,22 +180,10 @@ async function handlePostHeadline(request: Request, env: Env): Promise<Response>
       nextSubIndices[classification.category] += delta
     }
 
-    const newEvents: IndexEvent[] = [event]
-    if (classification.valid && Math.random() < EASTER_EGG_CHANCE) {
-      newEvents.push({
-        id: crypto.randomUUID(),
-        headline: "Let's win.",
-        delta: 0,
-        index: event.index,
-        source: 'easter-egg',
-        at: new Date().toISOString(),
-      })
-    }
-
     return {
       index: classification.valid ? newIndex : state.index,
       subIndices: nextSubIndices,
-      events: [...state.events, ...newEvents],
+      events: [...state.events, event],
     }
   })
 
@@ -181,6 +203,9 @@ export default {
       }
       if (url.pathname === '/api/fellow-watch' && request.method === 'GET') {
         return await handleFellowWatch(url, env)
+      }
+      if (url.pathname === '/api/external-signals' && request.method === 'GET') {
+        return await handleExternalSignals(env)
       }
       if (url.pathname.startsWith('/api/')) {
         return json({ error: 'not found' }, 404)
