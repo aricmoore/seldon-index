@@ -1,0 +1,191 @@
+:root {
+  color-scheme: dark;
+  --bg: #0a0a0b;
+  --surface: #141414;
+  --cream: #fff6da;
+  --text-secondary: #c3c2b7;
+  --text-muted: #898781;
+  --hairline: rgba(255, 255, 255, 0.1);
+  --series-1: #3987e5;
+  --good: #0ca30c;
+  --critical: #d03b3b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--cream);
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+.page {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 48px 24px 96px;
+}
+
+.masthead {
+  text-align: center;
+  margin-bottom: 40px;
+}
+
+.masthead-eyebrow {
+  color: var(--text-muted);
+  letter-spacing: 0.2em;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.masthead h1 {
+  font-size: 32px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.hero {
+  text-align: center;
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+  padding: 32px 0;
+  margin-bottom: 24px;
+}
+
+.hero-index {
+  font-size: 72px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-bottom: 16px;
+}
+
+.sparkline {
+  display: block;
+  margin: 0 auto;
+  max-width: 100%;
+}
+
+.sparkline-area {
+  fill: var(--series-1);
+  opacity: 0.12;
+  stroke: none;
+}
+
+.sparkline-line {
+  fill: none;
+  stroke: var(--series-1);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sparkline-dot {
+  fill: var(--series-1);
+}
+
+.wire-form-section {
+  margin-bottom: 32px;
+}
+
+.wire-form {
+  display: flex;
+  gap: 8px;
+}
+
+.wire-form input {
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  padding: 10px 14px;
+  color: var(--cream);
+  font-size: 14px;
+}
+
+.wire-form input:focus {
+  outline: 1px solid var(--series-1);
+}
+
+.wire-form button {
+  background: var(--cream);
+  color: var(--bg);
+  border: none;
+  border-radius: 6px;
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.wire-form button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.wire-form-error {
+  color: var(--critical);
+  font-size: 13px;
+  margin-top: 8px;
+}
+
+.tape table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.tape tr {
+  border-bottom: 1px solid var(--hairline);
+}
+
+.tape td {
+  padding: 10px 8px;
+  vertical-align: middle;
+}
+
+.tape-time {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  width: 64px;
+}
+
+.tape-headline {
+  color: var(--text-secondary);
+}
+
+.tape-delta {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.tape-index {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+  width: 72px;
+  color: var(--text-muted);
+}
+
+.delta-tag {
+  font-weight: 600;
+}
+
+.delta-up {
+  color: var(--good);
+}
+
+.delta-down {
+  color: var(--critical);
+}
