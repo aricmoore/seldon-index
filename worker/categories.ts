@@ -77,7 +77,7 @@ export const PILLAR_CATEGORIES: readonly CategoryMeta[] = [
       'Litigation and regulatory enforcement actions for or against frontier technology: AI copyright suits, autonomous-vehicle regulatory fights, antitrust against tech companies, court rulings on tech policy. Not military defense.',
     keywords: [
       'lawsuit', 'sues', 'court', 'ruling', 'rules', 'antitrust', 'copyright', 'litigation', 'appeals',
-      'injunction', 'settlement', 'plaintiff', 'lawsuit',
+      'injunction', 'settlement', 'plaintiff',
     ],
   },
 ] as const

@@ -2,17 +2,9 @@ import { useEffect, useState, useCallback, useRef, FormEvent, CSSProperties, Rea
 import type { EventCategory, IndexEvent, IndexState, PillarCategory } from '../worker/types'
 import type { FellowCitation } from '../worker/fellowWatch'
 import type { ExternalSignals } from '../worker/externalSignals'
+import { FELLOW_ROSTER, type FellowMentions } from '../worker/fellows'
 import { PILLAR_CATEGORIES, getCategoryMeta } from '../worker/categories'
 import Sparkline from './Sparkline'
-
-const FELLOW_SUGGESTIONS: Array<{ name: string; title: string }> = [
-  { name: 'Samuel Hammond', title: 'Director of AI & Chief Economist' },
-  { name: 'Zach Graves', title: 'President & CEO' },
-  { name: 'Dan Lips', title: 'Senior Fellow' },
-  { name: 'Luke Hogg', title: 'Senior Fellow' },
-  { name: 'Soren Dayton', title: 'Director of American Governance' },
-  { name: 'Daniel King', title: 'Research Fellow' },
-]
 
 const POLL_INTERVAL_MS = 5000
 const SIGNALS_POLL_MS = 60000
@@ -47,6 +39,24 @@ function initialTheme(): Theme {
   const saved = window.localStorage.getItem(THEME_STORAGE_KEY)
   if (saved === 'dark' || saved === 'light') return saved
   return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+}
+
+function DigitFlip({ value }: { value: string }) {
+  return (
+    <span className="digit-flip-group">
+      {value.split('').map((ch, i) =>
+        ch === ',' ? (
+          <span key={`sep-${i}`} className="digit-cell digit-cell-sep">
+            {ch}
+          </span>
+        ) : (
+          <span key={`${i}-${ch}`} className="digit-cell">
+            {ch}
+          </span>
+        ),
+      )}
+    </span>
+  )
 }
 
 function DeltaTag({ delta }: { delta: number }) {
@@ -132,20 +142,6 @@ function useTweenedIndex(target: number | null) {
   return { display, flash }
 }
 
-function buildLeaderboard(events: IndexEvent[]): Array<{ name: string; totalAbsDelta: number; count: number }> {
-  const map = new Map<string, { name: string; totalAbsDelta: number; count: number }>()
-  for (const e of events) {
-    if (e.source !== 'live' || !e.submittedBy) continue
-    const key = e.submittedBy.trim().toLowerCase()
-    if (!key) continue
-    const entry = map.get(key) ?? { name: e.submittedBy.trim(), totalAbsDelta: 0, count: 0 }
-    entry.totalAbsDelta += Math.abs(e.delta)
-    entry.count += 1
-    map.set(key, entry)
-  }
-  return [...map.values()].sort((a, b) => b.totalAbsDelta - a.totalAbsDelta).slice(0, 8)
-}
-
 function findMovers(events: IndexEvent[]): { gain?: IndexEvent; loss?: IndexEvent } {
   let gain: IndexEvent | undefined
   let loss: IndexEvent | undefined
@@ -157,10 +153,57 @@ function findMovers(events: IndexEvent[]): { gain?: IndexEvent; loss?: IndexEven
   return { gain, loss }
 }
 
+interface TickerItem {
+  key: string
+  category?: EventCategory
+  text: string
+  delta: number
+}
+
+function buildTickerItems(events: IndexEvent[], signals: ExternalSignals | null): TickerItem[] {
+  const items: TickerItem[] = []
+  if (signals) {
+    for (const s of signals.signals) {
+      items.push({
+        key: `signal-${s.label}`,
+        text: `${s.label.split('·')[0].trim().toUpperCase()}: ${s.count} DOCS VS PRIOR 7D`,
+        delta: s.count - s.countPrevious,
+      })
+    }
+  }
+  const recentLive = events
+    .filter((e) => e.source === 'live')
+    .slice(-8)
+    .reverse()
+  for (const e of recentLive) {
+    items.push({ key: e.id, category: e.category, text: e.headline, delta: e.delta })
+  }
+  return items
+}
+
+function TickerTape({ items }: { items: TickerItem[] }) {
+  if (items.length === 0) return null
+  const duration = Math.max(18, items.length * 5)
+  return (
+    <div className="ticker grid-area-ticker" aria-hidden="true">
+      <div className="ticker-track" style={{ '--ticker-duration': `${duration}s` } as CSSProperties}>
+        {[...items, ...items].map((item, i) => (
+          <span className="ticker-item" key={`${item.key}-${i}`}>
+            <CategoryTag category={item.category} />
+            {item.text}
+            <DeltaTag delta={item.delta} />
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function App() {
   const [theme, setTheme] = useState<Theme>(initialTheme)
   const [state, setState] = useState<IndexState | null>(null)
   const [signals, setSignals] = useState<ExternalSignals | null>(null)
+  const [fellowMentions, setFellowMentions] = useState<FellowMentions | null>(null)
   const [headline, setHeadline] = useState('')
   const [submittedBy, setSubmittedBy] = useState(() =>
     typeof window === 'undefined' ? '' : window.localStorage.getItem(SUBMITTER_STORAGE_KEY) ?? '',
@@ -168,6 +211,7 @@ export default function App() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [breaker, setBreaker] = useState<'up' | 'down' | null>(null)
+  const [pollPulse, setPollPulse] = useState(0)
   const [fellowQuery, setFellowQuery] = useState('')
   const [fellowResults, setFellowResults] = useState<FellowCitation[] | null>(null)
   const [fellowSearching, setFellowSearching] = useState(false)
@@ -181,6 +225,7 @@ export default function App() {
   }, [theme])
 
   const refresh = useCallback(async () => {
+    setPollPulse((p) => p + 1)
     const res = await fetch('/api/state')
     if (res.ok) setState(await res.json())
   }, [])
@@ -206,6 +251,21 @@ export default function App() {
     return () => {
       cancelled = true
       clearInterval(id)
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/fellow-mentions')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body) => {
+        if (!cancelled && body) setFellowMentions(body)
+      })
+      .catch(() => {
+        // Best-effort; the panel just shows its loading/empty state if this fails.
+      })
+    return () => {
+      cancelled = true
     }
   }, [])
 
@@ -274,7 +334,6 @@ export default function App() {
   }).sort((a, b) => b.latest - a.latest)
 
   const movers = findMovers(events)
-  const leaderboard = buildLeaderboard(events)
 
   if (!hasLoadedOnce.current && state) {
     // Mark the initial batch as already-seen so it renders in place instead
@@ -308,11 +367,15 @@ export default function App() {
 
       <div className="terminal-grid">
         <header className="masthead grid-area-header">
-          <div className="masthead-left">
-            <span className="live-dot" aria-hidden="true" />
+          <img
+            src={theme === 'dark' ? '/images/Lockup-White%202.png' : '/images/Lockup-Black.png'}
+            alt="Foundation for American Innovation"
+            className="masthead-logo"
+          />
+          <h1 className="masthead-title">Seldon Index</h1>
+          <div className="masthead-status">
             <span className="masthead-eyebrow">{PILLAR_CATEGORIES.map((c) => c.shortLabel).join(' · ')}</span>
-          </div>
-          <div className="masthead-right">
+            <span key={pollPulse} className="live-dot" aria-hidden="true" />
             <button
               type="button"
               className="theme-toggle"
@@ -321,24 +384,23 @@ export default function App() {
             >
               {theme === 'dark' ? '☀' : '☾'}
             </button>
-            <h1 className="masthead-title">The Seldon Index</h1>
-            <img
-              src={theme === 'dark' ? '/images/Lockup-White%202.png' : '/images/Lockup-Black.png'}
-              alt="Foundation for American Innovation"
-              className="masthead-logo"
-            />
           </div>
+          <p className="byline">We are quantifying civilisational trajectory. Let's win.</p>
         </header>
 
-        <p className="byline grid-area-byline">We are quantifying civilisational trajectory. Let's win.</p>
+        <TickerTape items={buildTickerItems(events, signals)} />
 
         <Panel title="THE INDEX" className="grid-area-hero" eyebrow="LIVE">
           {display !== null ? (
-            <div className={`hero-index ${flash ? `flash-${flash}` : ''}`}>{Math.round(display).toLocaleString()}</div>
+            <div className={`hero-index ${flash ? `flash-${flash}` : ''}`}>
+              <DigitFlip value={Math.round(display).toLocaleString()} />
+            </div>
           ) : (
-            <div className="hero-index is-loading" aria-label="Loading index" />
+            <div className="hero-index is-loading" aria-label="Loading index">
+              █
+            </div>
           )}
-          <Sparkline values={sparklineValues} />
+          <Sparkline values={sparklineValues} color="var(--accent)" />
           {sessionHigh !== null && sessionLow !== null && (
             <div className="session-range">
               SESSION HIGH {Math.round(sessionHigh).toLocaleString()} · LOW {Math.round(sessionLow).toLocaleString()}
@@ -349,7 +411,11 @@ export default function App() {
         <Panel title="SECTOR BOARD" className="grid-area-sectors">
           <ol className="sector-board">
             {sectorRows.map((row, i) => (
-              <li key={row.meta.id} className="sector-row">
+              <li
+                key={row.meta.id}
+                className="sector-row"
+                style={{ '--row-accent': row.meta.color } as CSSProperties}
+              >
                 <span className="sector-rank">{i + 1}</span>
                 <span className="sector-dot" style={{ background: row.meta.color } as CSSProperties} />
                 <span className="sector-label">{row.meta.shortLabel}</span>
@@ -453,7 +519,14 @@ export default function App() {
                       .filter(Boolean)
                       .join(' ')}
                   >
-                    <td className="tape-time">{formatTime(e.at)}</td>
+                    <td className="tape-time">
+                      {newIds.includes(e.id) && (
+                        <span className="tape-caret" aria-hidden="true">
+                          &gt;
+                        </span>
+                      )}
+                      {formatTime(e.at)}
+                    </td>
                     <td className="tape-headline">
                       {e.headline}
                       {(e.category || e.rationale) && (
@@ -476,20 +549,22 @@ export default function App() {
           </table>
         </Panel>
 
-        <Panel title="TOP CONTRIBUTORS" className="grid-area-leaderboard" eyebrow="LAST 200 WIRES">
-          {leaderboard.length > 0 ? (
+        <Panel title="TOP CONTRIBUTORS" className="grid-area-leaderboard" eyebrow="FEDERAL RECORD">
+          {fellowMentions && fellowMentions.fellows.length > 0 ? (
             <ol className="leaderboard">
-              {leaderboard.map((row, i) => (
+              {fellowMentions.fellows.map((row, i) => (
                 <li key={row.name} className="leaderboard-row">
                   <span className="leaderboard-rank">{i + 1}</span>
                   <span className="leaderboard-name">{row.name}</span>
-                  <span className="leaderboard-count">{row.count}×</span>
-                  <span className="leaderboard-score">{row.totalAbsDelta}</span>
+                  <span className="leaderboard-count">{row.confirmed}×</span>
+                  <span className="leaderboard-score">{row.total}</span>
                 </li>
               ))}
             </ol>
           ) : (
-            <div className="panel-status">No attributed submissions yet.</div>
+            <div className="panel-status">
+              {fellowMentions ? 'No confirmed mentions found in the federal record yet.' : 'Loading federal record mentions…'}
+            </div>
           )}
         </Panel>
 
@@ -514,12 +589,12 @@ export default function App() {
           </form>
           <div className="fellow-watch-suggestions">
             Try:{' '}
-            {FELLOW_SUGGESTIONS.map((f, i) => (
+            {FELLOW_ROSTER.map((f, i) => (
               <span key={f.name}>
                 <button type="button" className="fellow-suggestion" onClick={() => setFellowQuery(f.name)}>
                   {f.name} ({f.title})
                 </button>
-                {i < FELLOW_SUGGESTIONS.length - 1 ? ', ' : ''}
+                {i < FELLOW_ROSTER.length - 1 ? ', ' : ''}
               </span>
             ))}
           </div>

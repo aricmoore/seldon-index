@@ -95,6 +95,14 @@ function guessCategory(words: string[]): EventCategory {
   return best
 }
 
+// Used only when the classifier is unreachable and this keyword scorer is the
+// sole gate: without it, an outage means every submission (spam included)
+// gets valid=true, since this scorer itself has no way to mark something invalid.
+export function looksLikePlausibleHeadline(headline: string): boolean {
+  const words = headline.toLowerCase().match(/[a-z']+/g) ?? []
+  return words.length >= 3
+}
+
 export function scoreHeadline(headline: string): ScoreResult {
   const words = headline.toLowerCase().match(/[a-z']+/g) ?? []
   let sum = 0

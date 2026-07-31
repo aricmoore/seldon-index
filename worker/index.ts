@@ -1,12 +1,16 @@
 import type { IndexEvent, IndexState } from './types'
-import { scoreHeadline } from './scorer'
+import { scoreHeadline, looksLikePlausibleHeadline } from './scorer'
 import { buildSeedState } from './seed'
 import { classifyHeadline, type ClassificationResult } from './classifier'
-import { searchFellowCitations } from './fellowWatch'
+import { searchFellowCitations, type FellowCitation } from './fellowWatch'
 import { fetchExternalSignals, type ExternalSignals } from './externalSignals'
+import { FELLOW_ROSTER, type FellowMentions } from './fellows'
 
 const SIGNALS_CACHE_KEY = 'external-signals-cache'
 const SIGNALS_CACHE_TTL_MS = 12 * 60_000
+const MENTIONS_CACHE_KEY = 'fellow-mentions-cache'
+// Federal-record mentions don't shift on a demo's timescale, so this outlives SIGNALS_CACHE_TTL_MS.
+const MENTIONS_CACHE_TTL_MS = 30 * 60_000
 
 const STATE_KEY = 'state'
 const MAX_EVENTS = 200
@@ -26,11 +30,14 @@ async function classifyWithFallback(headline: string, env: Env): Promise<Classif
   } catch (err) {
     console.error('classifier failed, falling back to keyword scorer', err)
     const { delta, category } = scoreHeadline(headline)
+    const plausible = looksLikePlausibleHeadline(headline)
     return {
-      valid: true,
+      valid: plausible,
       category,
-      impact: Math.round(delta / IMPACT_SCALE),
-      rationale: 'keyword fallback (classifier unavailable)',
+      impact: plausible ? Math.round(delta / IMPACT_SCALE) : 0,
+      rationale: plausible
+        ? 'keyword fallback (classifier unavailable)'
+        : 'too short to evaluate (classifier unavailable)',
     }
   }
 }
@@ -91,6 +98,16 @@ function json(data: unknown, status = 200): Response {
   })
 }
 
+// Both routes below call metered, rate-limited external APIs (the headline
+// classifier, GovInfo, regulations.gov) on every request with no auth in
+// front of them, so an unthrottled client can drive real API cost/quota usage.
+// Keyed per IP per route.
+async function rateLimited(limiter: RateLimit, request: Request, routeKey: string): Promise<boolean> {
+  const ip = request.headers.get('CF-Connecting-IP') ?? 'unknown'
+  const { success } = await limiter.limit({ key: `${routeKey}:${ip}` })
+  return !success
+}
+
 async function handleGetState(env: Env): Promise<Response> {
   const state = await loadState(env)
   return json(state)
@@ -109,6 +126,46 @@ async function handleFellowWatch(url: URL, env: Env): Promise<Response> {
   } catch (err) {
     console.error('fellow watch search failed', err)
     return json({ error: 'search failed' }, 502)
+  }
+}
+
+async function buildFellowMentions(env: Env): Promise<FellowMentions> {
+  const fellows = await Promise.all(
+    FELLOW_ROSTER.map(async (fellow) => {
+      const citations = await searchFellowCitations(fellow.name, env.GOVINFO_API_KEY).catch((err) => {
+        console.error(`fellow mentions lookup failed for ${fellow.name}`, err)
+        return [] as FellowCitation[]
+      })
+      const confirmed = citations.filter((c) => c.confidence === 'confirmed').length
+      const possible = citations.filter((c) => c.confidence === 'possible').length
+      return { name: fellow.name, title: fellow.title, confirmed, possible, total: confirmed + possible }
+    }),
+  )
+
+  return {
+    generatedAt: new Date().toISOString(),
+    stale: false,
+    fellows: fellows.filter((f) => f.total > 0).sort((a, b) => b.total - a.total || b.confirmed - a.confirmed),
+  }
+}
+
+async function handleFellowMentions(env: Env): Promise<Response> {
+  const cachedRaw = await env.AII_KV.get(MENTIONS_CACHE_KEY)
+  const cached = cachedRaw ? (JSON.parse(cachedRaw) as FellowMentions) : null
+  const cacheAge = cached ? Date.now() - new Date(cached.generatedAt).getTime() : Infinity
+
+  if (cached && cacheAge < MENTIONS_CACHE_TTL_MS) {
+    return json(cached)
+  }
+
+  try {
+    const fresh = await buildFellowMentions(env)
+    await env.AII_KV.put(MENTIONS_CACHE_KEY, JSON.stringify(fresh))
+    return json(fresh)
+  } catch (err) {
+    console.error('fellow mentions build failed', err)
+    if (cached) return json({ ...cached, stale: true })
+    return json({ generatedAt: new Date().toISOString(), stale: false, fellows: [] })
   }
 }
 
@@ -199,13 +256,22 @@ export default {
         return await handleGetState(env)
       }
       if (url.pathname === '/api/headline' && request.method === 'POST') {
+        if (await rateLimited(env.HEADLINE_RATE_LIMITER, request, 'headline')) {
+          return json({ error: 'rate limit exceeded, try again shortly' }, 429)
+        }
         return await handlePostHeadline(request, env)
       }
       if (url.pathname === '/api/fellow-watch' && request.method === 'GET') {
+        if (await rateLimited(env.FELLOW_WATCH_RATE_LIMITER, request, 'fellow-watch')) {
+          return json({ error: 'rate limit exceeded, try again shortly' }, 429)
+        }
         return await handleFellowWatch(url, env)
       }
       if (url.pathname === '/api/external-signals' && request.method === 'GET') {
         return await handleExternalSignals(env)
+      }
+      if (url.pathname === '/api/fellow-mentions' && request.method === 'GET') {
+        return await handleFellowMentions(env)
       }
       if (url.pathname.startsWith('/api/')) {
         return json({ error: 'not found' }, 404)
