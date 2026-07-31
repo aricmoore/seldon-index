@@ -389,11 +389,13 @@ export default function App() {
 
       <div className="terminal-grid">
         <header className="masthead grid-area-header">
-          <img
-            src={theme === 'dark' ? '/images/Lockup-White%202.png' : '/images/Lockup-Black.png'}
-            alt="Foundation for American Innovation"
-            className="masthead-logo"
-          />
+          <a href="https://thefai.org" target="_blank" rel="noopener noreferrer">
+            <img
+              src={theme === 'dark' ? '/images/Lockup-White%202.png' : '/images/Lockup-Black.png'}
+              alt="Foundation for American Innovation"
+              className="masthead-logo"
+            />
+          </a>
           <h1 className="masthead-title">Seldon Index</h1>
           <div className="masthead-status">
             <span className="masthead-eyebrow">{PILLAR_CATEGORIES.map((c) => c.shortLabel).join(' · ')}</span>
@@ -603,8 +605,7 @@ export default function App() {
         <Panel title="FELLOW WATCH" className="grid-area-fellow">
           <p className="fellow-watch-sub">
             Search the federal record (hearings, Congressional Record, committee reports, and public agency comments)
-            for a name. Real citations only: no hit means no claim, and every result is labeled by how confident the
-            match is.
+            for a name. No hit means no claim and every result is labeled by match confidence. Real citations only.
           </p>
           <form className="wire-form" onSubmit={handleFellowSearch}>
             <input
@@ -657,6 +658,12 @@ export default function App() {
           )}
         </Panel>
       </div>
+
+      <footer className="site-footer">
+        <p>FAI Seldon Index · v0.1.0</p>
+        <p>Built by Arielle Moore, Machine God</p>
+        <p>© 2026 The Foundation for American Innovation</p>
+      </footer>
     </div>
   )
 }

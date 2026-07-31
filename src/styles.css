@@ -294,6 +294,19 @@ body {
   }
 }
 
+.site-footer {
+  font-family: var(--font-sans);
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-align: center;
+  line-height: 1.6;
+  padding: 24px 0;
+}
+
+.site-footer p {
+  margin: 0;
+}
+
 .ticker {
   overflow: hidden;
   border-top: 1px solid var(--hairline);
