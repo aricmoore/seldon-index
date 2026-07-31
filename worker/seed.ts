@@ -1,4 +1,5 @@
 import type { EventCategory, IndexEvent, IndexState, PillarCategory } from './types'
+import { PILLAR_IDS } from './categories'
 import { scoreHeadline } from './scorer'
 
 export const BASE_INDEX = 1000
@@ -11,35 +12,33 @@ export const BASE_SUB_INDEX = 1000
  * notable papers) before demoing.
  */
 const SEED_HEADLINES: Array<{ headline: string; category: EventCategory }> = [
-  { headline: 'Startup demonstrates reusable orbital-class rocket stage', category: 'Space' },
-  { headline: 'DOE announces new grant round for advanced nuclear reactor designs', category: 'Energy' },
-  { headline: 'Research lab reports breakthrough in materials for grid-scale batteries', category: 'Energy' },
-  { headline: 'Defense contractor wins contract for autonomous systems program', category: 'Defense' },
-  { headline: 'University team publishes discovery in semiconductor fabrication', category: 'AI' },
-  { headline: 'Commercial space company opens new launch site', category: 'Space' },
-  { headline: 'Federal agency approves expedited permitting for energy infrastructure', category: 'Energy' },
-  { headline: 'AI lab reports milestone in efficient model training', category: 'AI' },
-  { headline: 'Manufacturer announces expansion of domestic chip fabrication capacity', category: 'Defense' },
-  { headline: 'Investigation opened into satellite component supply delays', category: 'Space' },
-  { headline: 'Regulatory delay pushes back planned spectrum auction', category: 'Other' },
-  { headline: 'Startup lays off staff after funding round falls through', category: 'Other' },
+  { headline: 'Commerce Department tightens export controls on advanced chipmaking equipment', category: 'Technology & Statecraft' },
+  { headline: 'Defense contractor wins contract for autonomous systems program', category: 'Technology & Statecraft' },
+  { headline: 'AI lab reports milestone in efficient model training', category: 'Artificial Intelligence' },
+  { headline: 'Startup raises major funding round for frontier AI research', category: 'Artificial Intelligence' },
+  { headline: 'Federal agency launches pilot to digitize permitting backlog', category: 'American Governance' },
+  { headline: 'Regulatory delay pushes back planned spectrum auction', category: 'American Governance' },
+  { headline: 'DOE announces new grant round for advanced nuclear reactor designs', category: 'Energy & Infrastructure' },
+  { headline: 'Research lab reports breakthrough in materials for grid-scale batteries', category: 'Energy & Infrastructure' },
+  { headline: 'Startup demonstrates reusable orbital-class rocket stage', category: 'Science & Innovation' },
+  { headline: 'University team publishes discovery in semiconductor fabrication', category: 'Science & Innovation' },
+  { headline: 'Federal court allows copyright lawsuit against AI developer to proceed', category: 'Frontier Legal Defense' },
+  { headline: 'Appeals court rules against agency bid to regulate autonomous-vehicle testing', category: 'Frontier Legal Defense' },
 ]
 
 const HOURS_BETWEEN_SEED_EVENTS = 9
 
 export function buildSeedState(nowMs: number): IndexState {
   let index = BASE_INDEX
-  const subIndices: Record<PillarCategory, number> = {
-    AI: BASE_SUB_INDEX,
-    Energy: BASE_SUB_INDEX,
-    Defense: BASE_SUB_INDEX,
-    Space: BASE_SUB_INDEX,
-  }
+  const subIndices = Object.fromEntries(PILLAR_IDS.map((id) => [id, BASE_SUB_INDEX])) as Record<
+    PillarCategory,
+    number
+  >
 
   const events: IndexEvent[] = SEED_HEADLINES.map(({ headline, category }, i) => {
     const { delta } = scoreHeadline(headline)
     index += delta
-    if (category !== 'Other') subIndices[category] += delta
+    if (category !== 'Other') subIndices[category as PillarCategory] += delta
     const at = new Date(
       nowMs - (SEED_HEADLINES.length - i) * HOURS_BETWEEN_SEED_EVENTS * 3600_000,
     ).toISOString()

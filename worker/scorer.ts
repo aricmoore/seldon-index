@@ -1,3 +1,5 @@
+import { PILLAR_CATEGORIES, type EventCategory } from './categories'
+
 const POSITIVE_TERMS: Record<string, number> = {
   breakthrough: 18,
   launch: 15,
@@ -77,6 +79,20 @@ function neutralNudge(headline: string): number {
 export interface ScoreResult {
   delta: number
   matched: string[]
+  category: EventCategory
+}
+
+function guessCategory(words: string[]): EventCategory {
+  let best: EventCategory = 'Other'
+  let bestHits = 0
+  for (const meta of PILLAR_CATEGORIES) {
+    const hits = words.filter((w) => meta.keywords.includes(w)).length
+    if (hits > bestHits) {
+      bestHits = hits
+      best = meta.id
+    }
+  }
+  return best
 }
 
 export function scoreHeadline(headline: string): ScoreResult {
@@ -99,5 +115,5 @@ export function scoreHeadline(headline: string): ScoreResult {
   }
 
   const delta = Math.max(-MAX_ABS_DELTA, Math.min(MAX_ABS_DELTA, Math.round(sum)))
-  return { delta, matched }
+  return { delta, matched, category: guessCategory(words) }
 }
