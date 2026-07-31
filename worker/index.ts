@@ -1,10 +1,35 @@
 import type { IndexEvent, IndexState } from './types'
 import { scoreHeadline } from './scorer'
 import { buildSeedState } from './seed'
+import { classifyHeadline, type ClassificationResult } from './classifier'
+import { searchFellowCitations } from './fellowWatch'
 
 const STATE_KEY = 'state'
 const MAX_EVENTS = 200
 const MAX_HEADLINE_LENGTH = 140
+const MAX_FELLOW_NAME_LENGTH = 80
+const IMPACT_SCALE = 4
+const MAX_ABS_DELTA = 40
+const EASTER_EGG_CHANCE = 0.125
+
+function scaledDelta(impact: number): number {
+  return Math.max(-MAX_ABS_DELTA, Math.min(MAX_ABS_DELTA, Math.round(impact * IMPACT_SCALE)))
+}
+
+async function classifyWithFallback(headline: string, env: Env): Promise<ClassificationResult> {
+  try {
+    return await classifyHeadline(headline, env.ANTHROPIC_API_KEY)
+  } catch (err) {
+    console.error('classifier failed, falling back to keyword scorer', err)
+    const { delta } = scoreHeadline(headline)
+    return {
+      valid: true,
+      category: 'Other',
+      impact: Math.round(delta / IMPACT_SCALE),
+      rationale: 'keyword fallback (classifier unavailable)',
+    }
+  }
+}
 
 async function loadState(env: Env): Promise<IndexState> {
   const raw = await env.AII_KV.get(STATE_KEY)
@@ -15,12 +40,44 @@ async function loadState(env: Env): Promise<IndexState> {
   return seeded
 }
 
-async function saveState(env: Env, state: IndexState): Promise<void> {
-  const trimmed: IndexState = {
+function trimState(state: IndexState): IndexState {
+  return {
     index: state.index,
+    subIndices: state.subIndices,
     events: state.events.slice(-MAX_EVENTS),
   }
-  await env.AII_KV.put(STATE_KEY, JSON.stringify(trimmed))
+}
+
+const WRITE_RETRY_ATTEMPTS = 5
+
+// Cloudflare KV has no compare-and-swap, so a plain read -> compute -> write
+// cycle can silently drop concurrent submissions (confirmed in testing: 5
+// simultaneous requests, only 1 survived). This narrows that window rather
+// than eliminating it: re-read the raw KV value immediately before writing,
+// and if it's changed since the mutation was computed, recompute against
+// the fresh state and retry. A tiny race still exists between the final
+// read and the write itself (KV has no atomic primitive for that), but this
+// shrinks the exposure from "the full classifier call" down to two reads
+// and a comparison. A Durable Object would close it fully but is out of
+// scope for today.
+async function mutateState(env: Env, mutate: (state: IndexState) => IndexState): Promise<IndexState> {
+  for (let attempt = 0; attempt < WRITE_RETRY_ATTEMPTS; attempt++) {
+    const before = await env.AII_KV.get(STATE_KEY)
+    const state = before ? (JSON.parse(before) as IndexState) : buildSeedState(Date.now())
+    const next = trimState(mutate(state))
+
+    const check = await env.AII_KV.get(STATE_KEY)
+    if (check !== before) continue // someone else wrote in between; retry against fresh state
+
+    await env.AII_KV.put(STATE_KEY, JSON.stringify(next))
+    return next
+  }
+  // Give up narrowing the race and just apply on top of whatever's latest,
+  // rather than failing the request outright after repeated contention.
+  const state = await loadState(env)
+  const next = trimState(mutate(state))
+  await env.AII_KV.put(STATE_KEY, JSON.stringify(next))
+  return next
 }
 
 function json(data: unknown, status = 200): Response {
@@ -33,6 +90,22 @@ function json(data: unknown, status = 200): Response {
 async function handleGetState(env: Env): Promise<Response> {
   const state = await loadState(env)
   return json(state)
+}
+
+async function handleFellowWatch(url: URL, env: Env): Promise<Response> {
+  const name = url.searchParams.get('name')?.trim()
+  if (!name) return json({ error: 'name query param is required' }, 400)
+  if (name.length > MAX_FELLOW_NAME_LENGTH) {
+    return json({ error: `name must be ${MAX_FELLOW_NAME_LENGTH} characters or fewer` }, 400)
+  }
+
+  try {
+    const citations = await searchFellowCitations(name, env.GOVINFO_API_KEY)
+    return json({ name, citations })
+  } catch (err) {
+    console.error('fellow watch search failed', err)
+    return json({ error: 'search failed' }, 502)
+  }
 }
 
 async function handlePostHeadline(request: Request, env: Env): Promise<Response> {
@@ -51,25 +124,48 @@ async function handlePostHeadline(request: Request, env: Env): Promise<Response>
     return json({ error: `headline must be ${MAX_HEADLINE_LENGTH} characters or fewer` }, 400)
   }
 
-  const state = await loadState(env)
-  const { delta } = scoreHeadline(headline)
-  const newIndex = state.index + delta
-  const event: IndexEvent = {
-    id: crypto.randomUUID(),
-    headline: headline.trim(),
-    delta,
-    index: newIndex,
-    source: 'live',
-    at: new Date().toISOString(),
-  }
+  const classification = await classifyWithFallback(headline.trim(), env)
+  let event!: IndexEvent
 
-  const nextState: IndexState = {
-    index: newIndex,
-    events: [...state.events, event],
-  }
-  await saveState(env, nextState)
+  const nextState = await mutateState(env, (state) => {
+    const delta = classification.valid ? scaledDelta(classification.impact) : 0
+    const newIndex = state.index + delta
+    event = {
+      id: crypto.randomUUID(),
+      headline: headline.trim(),
+      delta,
+      index: classification.valid ? newIndex : state.index,
+      source: classification.valid ? 'live' : 'rejected',
+      category: classification.category,
+      rationale: classification.rationale,
+      at: new Date().toISOString(),
+    }
 
-  return json({ event, index: newIndex })
+    const nextSubIndices = { ...state.subIndices }
+    if (classification.valid && classification.category !== 'Other') {
+      nextSubIndices[classification.category] += delta
+    }
+
+    const newEvents: IndexEvent[] = [event]
+    if (classification.valid && Math.random() < EASTER_EGG_CHANCE) {
+      newEvents.push({
+        id: crypto.randomUUID(),
+        headline: "Let's win.",
+        delta: 0,
+        index: event.index,
+        source: 'easter-egg',
+        at: new Date().toISOString(),
+      })
+    }
+
+    return {
+      index: classification.valid ? newIndex : state.index,
+      subIndices: nextSubIndices,
+      events: [...state.events, ...newEvents],
+    }
+  })
+
+  return json({ event, index: nextState.index })
 }
 
 export default {
@@ -82,6 +178,9 @@ export default {
       }
       if (url.pathname === '/api/headline' && request.method === 'POST') {
         return await handlePostHeadline(request, env)
+      }
+      if (url.pathname === '/api/fellow-watch' && request.method === 'GET') {
+        return await handleFellowWatch(url, env)
       }
       if (url.pathname.startsWith('/api/')) {
         return json({ error: 'not found' }, 404)
