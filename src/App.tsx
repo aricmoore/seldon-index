@@ -361,15 +361,23 @@ export default function App() {
     for (const e of recentTape) seenIds.current.add(e.id)
   }, [recentTape])
 
+  const breakerTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   useEffect(() => {
     const trigger = recentTape.find(
       (e) => newIds.includes(e.id) && e.source === 'live' && Math.abs(e.delta) >= CIRCUIT_BREAKER_THRESHOLD,
     )
     if (!trigger) return
     setBreaker(trigger.delta > 0 ? 'up' : 'down')
-    const t = setTimeout(() => setBreaker(null), CIRCUIT_BREAKER_MS)
-    return () => clearTimeout(t)
+    if (breakerTimeout.current) clearTimeout(breakerTimeout.current)
+    breakerTimeout.current = setTimeout(() => setBreaker(null), CIRCUIT_BREAKER_MS)
   }, [recentTape, newIds])
+
+  useEffect(() => {
+    return () => {
+      if (breakerTimeout.current) clearTimeout(breakerTimeout.current)
+    }
+  }, [])
 
   return (
     <div className="page">
