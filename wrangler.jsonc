@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "american-innovation-index",
+  "name": "seldon-index",
   "main": "worker/index.ts",
   "compatibility_date": "2026-07-31",
   "assets": {
@@ -9,7 +9,7 @@
     "run_worker_first": ["/api/*"]
   },
   "kv_namespaces": [
-    { "binding": "AII_KV", "id": "REPLACE_WITH_KV_NAMESPACE_ID" }
+    { "binding": "AII_KV", "id": "9ae990aec2c3462781beec99769829bf" }
   ],
   "observability": {
     "enabled": true,

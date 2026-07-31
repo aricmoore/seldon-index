@@ -1,4 +1,4 @@
-# The American Innovation Index
+# The Seldon Index
 
 A live, deadpan-serious ticker for "the health of American innovation": one
 running index number, an event tape of headlines that move it, and a form

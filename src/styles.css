@@ -34,17 +34,70 @@ body {
   padding: 48px 24px 96px;
 }
 
+.circuit-breaker {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  padding: 14px;
+  text-align: center;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  font-size: 15px;
+  color: var(--bg);
+  animation: breaker-flash 0.5s steps(2) infinite;
+}
+
+.circuit-breaker-up {
+  background: var(--good);
+}
+
+.circuit-breaker-down {
+  background: var(--critical);
+}
+
+@keyframes breaker-flash {
+  50% {
+    opacity: 0.55;
+  }
+}
+
 .masthead {
   text-align: center;
   margin-bottom: 40px;
 }
 
 .masthead-eyebrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   color: var(--text-muted);
   letter-spacing: 0.2em;
   font-size: 12px;
   font-weight: 600;
   margin-bottom: 12px;
+}
+
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--critical);
+  animation: live-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(208, 59, 59, 0.5);
+  }
+  50% {
+    opacity: 0.4;
+    box-shadow: 0 0 0 4px rgba(208, 59, 59, 0);
+  }
 }
 
 .masthead h1 {
@@ -67,6 +120,35 @@ body {
   font-weight: 700;
   letter-spacing: -0.02em;
   margin-bottom: 16px;
+  font-variant-numeric: tabular-nums;
+  transition: color 0.2s ease;
+}
+
+.hero-index.flash-up {
+  color: var(--good);
+}
+
+.hero-index.flash-down {
+  color: var(--critical);
+}
+
+.hero-index.is-loading {
+  height: 72px;
+  max-width: 280px;
+  margin: 0 auto 16px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, transparent, rgba(255, 246, 218, 0.12), transparent);
+  background-size: 200% 100%;
+  animation: scan 1.4s linear infinite;
+}
+
+@keyframes scan {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 .sparkline {
@@ -87,10 +169,62 @@ body {
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  animation: draw-line 900ms ease-out forwards;
+}
+
+@keyframes draw-line {
+  to {
+    stroke-dashoffset: 0;
+  }
 }
 
 .sparkline-dot {
   fill: var(--series-1);
+}
+
+.sub-indices {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 32px;
+}
+
+.sub-index-tile {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  padding: 12px 8px 4px;
+}
+
+.sub-index-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.sub-index-tile.category-ai .sub-index-label {
+  color: #3987e5;
+}
+.sub-index-tile.category-energy .sub-index-label {
+  color: #d0a83b;
+}
+.sub-index-tile.category-defense .sub-index-label {
+  color: #d03b3b;
+}
+.sub-index-tile.category-space .sub-index-label {
+  color: #8a5bd6;
+}
+
+.sub-index-value {
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 4px;
 }
 
 .wire-form-section {
@@ -188,4 +322,193 @@ body {
 
 .delta-down {
   color: var(--critical);
+}
+
+.delta-rejected {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.tape-rationale {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-style: italic;
+  margin-top: 3px;
+}
+
+.tape-row-rejected {
+  opacity: 0.6;
+}
+
+.tape-row-easter-egg .tape-headline {
+  color: var(--cream);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.delta-easter-egg {
+  color: var(--cream);
+  font-weight: 700;
+}
+
+.tape-row-new {
+  animation: tape-row-in 0.6s ease-out;
+}
+
+@keyframes tape-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+    background-color: rgba(255, 246, 218, 0.08);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    background-color: transparent;
+  }
+}
+
+.category-tag {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-right: 6px;
+  border: 1px solid var(--hairline);
+  color: var(--text-secondary);
+}
+
+.category-ai {
+  border-color: #3987e5;
+  color: #3987e5;
+}
+
+.category-energy {
+  border-color: #d0a83b;
+  color: #d0a83b;
+}
+
+.category-defense {
+  border-color: #d03b3b;
+  color: #d03b3b;
+}
+
+.category-space {
+  border-color: #8a5bd6;
+  color: #8a5bd6;
+}
+
+.category-other {
+  border-color: var(--hairline);
+  color: var(--text-muted);
+}
+
+.fellow-watch {
+  margin-top: 40px;
+  padding-top: 24px;
+  border-top: 1px solid var(--hairline);
+}
+
+.fellow-watch-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0 0 6px;
+}
+
+.fellow-watch-sub {
+  color: var(--text-muted);
+  font-size: 13px;
+  margin: 0 0 16px;
+}
+
+.fellow-watch-suggestions {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+.fellow-suggestion {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--series-1);
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.fellow-watch-status {
+  color: var(--text-muted);
+  font-size: 13px;
+  margin-top: 16px;
+}
+
+.fellow-watch-results {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fellow-watch-card {
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  padding: 10px 14px;
+}
+
+.fellow-watch-card.confidence-possible {
+  border-style: dashed;
+  opacity: 0.85;
+}
+
+.fellow-watch-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.confidence-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.confidence-badge-confirmed {
+  color: var(--good);
+  border: 1px solid var(--good);
+}
+
+.confidence-badge-possible {
+  color: var(--text-muted);
+  border: 1px solid var(--hairline);
+}
+
+.fellow-watch-card-title {
+  color: var(--cream);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.fellow-watch-card-title:hover {
+  text-decoration: underline;
+}
+
+.fellow-watch-card-meta {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-top: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }

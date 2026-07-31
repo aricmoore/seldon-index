@@ -26,8 +26,14 @@ export default function Sparkline({ values, width = 640, height = 120 }: Sparkli
 
   return (
     <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="sparkline" role="img" aria-label="Index value over time">
-      <path d={areaPath} className="sparkline-area" />
-      <path d={linePath} className="sparkline-line" />
+      <defs>
+        <linearGradient id="sparkline-fill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="var(--series-1)" stopOpacity="0.28" />
+          <stop offset="100%" stopColor="var(--series-1)" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={areaPath} className="sparkline-area" fill="url(#sparkline-fill)" />
+      <path d={linePath} className="sparkline-line" pathLength={100} />
       <circle cx={lastX} cy={lastY} r={4} className="sparkline-dot" />
     </svg>
   )
